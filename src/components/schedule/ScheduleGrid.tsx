@@ -100,7 +100,7 @@ function GridCell({
   classesById: Map<string, SchoolClass>
   mode: 'class' | 'teacher'
 }) {
-  if (lessons.length === 0) return <td className="h-16 min-w-[150px] border-b border-border p-1.5 align-top" />
+  if (lessons.length === 0) return <td className="min-h-16 min-w-[150px] border-b border-border p-1.5 align-top" />
 
   const secondaryOf = (lesson: Lesson) =>
     mode === 'class' ? teacherName(teachersById.get(lesson.teacherId)) : classesById.get(lesson.classId)?.name
@@ -114,7 +114,7 @@ function GridCell({
   if (!isRotation) {
     const lesson = week0 ?? week1 ?? lessons[0]
     return (
-      <td className="h-16 min-w-[150px] border-b border-border p-1.5 align-top">
+      <td className="min-h-16 min-w-[150px] border-b border-border p-1.5 align-top">
         <LessonChip
           lesson={lesson}
           subject={subjectsById.get(lesson.subjectId)}
@@ -128,13 +128,14 @@ function GridCell({
   }
 
   // Rotation slot — stack week 0 above week 1, showing an empty slot where a week has no lesson.
+  // The cell grows to fit both halves (min-height, not fixed) so nothing spills past its border.
   return (
-    <td className="h-16 min-w-[150px] border-b border-border p-1 align-top">
-      <div className="flex h-full flex-col gap-1">
+    <td className="min-w-[150px] border-b border-border p-1 align-top">
+      <div className="flex flex-col gap-1">
         <RotationHalf
           week={0}
           lesson={week0}
-          subjectsById={subjectsById}
+          subject={week0 ? subjectsById.get(week0.subjectId) : undefined}
           secondary={week0 ? secondaryOf(week0) : ''}
           teachersById={teachersById}
           classesById={classesById}
@@ -143,7 +144,7 @@ function GridCell({
         <RotationHalf
           week={1}
           lesson={week1}
-          subjectsById={subjectsById}
+          subject={week1 ? subjectsById.get(week1.subjectId) : undefined}
           secondary={week1 ? secondaryOf(week1) : ''}
           teachersById={teachersById}
           classesById={classesById}
@@ -157,7 +158,7 @@ function GridCell({
 function RotationHalf({
   week,
   lesson,
-  subjectsById,
+  subject,
   secondary,
   teachersById,
   classesById,
@@ -165,7 +166,7 @@ function RotationHalf({
 }: {
   week: 0 | 1
   lesson?: Lesson
-  subjectsById: Map<string, Subject>
+  subject?: Subject
   secondary?: string
   teachersById: Map<string, Teacher>
   classesById: Map<string, SchoolClass>
@@ -173,7 +174,7 @@ function RotationHalf({
 }) {
   if (!lesson) {
     return (
-      <div className="flex flex-1 items-center gap-1.5 rounded-md border border-dashed border-border px-2 py-1 text-[11px] text-muted-foreground/60">
+      <div className="flex min-h-7 items-center gap-1.5 rounded-md border border-dashed border-border px-2 text-[11px] text-muted-foreground/60">
         <WeekBadge week={week} />
         <span>—</span>
       </div>
@@ -183,7 +184,7 @@ function RotationHalf({
     <LessonChip
       lesson={lesson}
       week={week}
-      subject={subjectsById.get(lesson.subjectId)}
+      subject={subject}
       secondary={secondary}
       teachersById={teachersById}
       classesById={classesById}
@@ -217,15 +218,26 @@ function LessonChip({
       <PopoverTrigger asChild>
         <button
           className={
-            'flex w-full flex-col rounded-md border border-primary/20 bg-primary/10 text-left transition-shadow hover:shadow-sm ' +
-            (compact ? 'flex-1 gap-0 px-2 py-1 text-[11px]' : 'h-full gap-0.5 px-2 py-1.5 text-xs')
+            'flex w-full rounded-md border border-primary/20 bg-primary/10 text-left transition-shadow hover:shadow-sm ' +
+            (compact
+              ? 'min-h-7 items-center gap-1 px-2 py-0.5 text-[11px]'
+              : 'h-full flex-col gap-0.5 px-2 py-1.5 text-xs')
           }
         >
-          <span className="flex items-center gap-1">
-            {week !== undefined && <WeekBadge week={week} />}
-            <span className="truncate font-medium text-foreground">{subject?.name}</span>
-          </span>
-          {secondary && <span className="truncate text-muted-foreground">{secondary}</span>}
+          {compact ? (
+            <>
+              {week !== undefined && <WeekBadge week={week} />}
+              <span className="truncate font-medium text-foreground">{subject?.name}</span>
+            </>
+          ) : (
+            <>
+              <span className="flex items-center gap-1">
+                {week !== undefined && <WeekBadge week={week} />}
+                <span className="truncate font-medium text-foreground">{subject?.name}</span>
+              </span>
+              {secondary && <span className="truncate text-muted-foreground">{secondary}</span>}
+            </>
+          )}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-64 space-y-2">
