@@ -79,15 +79,22 @@ export function computeConflicts(): GenerationConflict[] {
 }
 
 /**
- * A schedule now runs a two-week rotation. `lessonsPerWeek` is the true average across the
- * two-week cycle, so a workload contributes `round(lessonsPerWeek * 2)` lessons total, split
- * as evenly as possible between week 0 (numerator) and week 1 (denominator). A whole number
- * lands identically in both weeks; a fractional one (0.5, 1.5, …) is uneven by one lesson.
+ * A schedule runs a two-week rotation. The whole part of `lessonsPerWeek` is a full lesson
+ * that repeats identically every week (isPartial: false, emitted for both weeks). A trailing
+ * ".5" is a single partial lesson that occupies its slot in only one of the two weeks
+ * (isPartial: true) — this is the only case where a slot shows a week I / week II rotation.
  */
-function twoWeekCounts(lessonsPerWeek: number): [number, number] {
-  const total = Math.round(lessonsPerWeek * 2)
-  const numerator = Math.ceil(total / 2)
-  return [numerator, total - numerator]
+function fullLessonsPerWeek(lessonsPerWeek: number): number {
+  return Math.floor(lessonsPerWeek + 1e-9)
+}
+
+function hasPartialLesson(lessonsPerWeek: number): boolean {
+  return lessonsPerWeek - fullLessonsPerWeek(lessonsPerWeek) >= 0.5
+}
+
+/** Total lessons a workload contributes across the whole two-week cycle. */
+function twoWeekTotal(lessonsPerWeek: number): number {
+  return fullLessonsPerWeek(lessonsPerWeek) * 2 + (hasPartialLesson(lessonsPerWeek) ? 1 : 0)
 }
 
 function generateLessons(): { lessons: Lesson[]; unplaced: number } {
@@ -105,10 +112,11 @@ function generateLessons(): { lessons: Lesson[]; unplaced: number } {
   const teacherById = new Map(db.teachers.map((t) => [t.id, t]))
 
   // Places one lesson for the given week, trying `preferred` slot first (used to pin a
-  // whole-number workload to the same slot in both weeks). Returns the slot used, or null.
+  // full lesson to the same slot in both weeks). Returns the slot used, or null.
   const place = (
     unit: WorkloadEntry,
     week: 0 | 1,
+    isPartial: boolean,
     classIndex: number,
     cls: SchoolClass,
     preferred?: { day: number; period: number },
@@ -142,7 +150,7 @@ function generateLessons(): { lessons: Lesson[]; unplaced: number } {
         classSet.add(key)
         teacherOccupied.get(unit.teacherId)!.add(key)
         teacherDailyCount.get(unit.teacherId)!.set(dayKey, dailyCount + 1)
-        lessons.push({ classId: unit.classId, subjectId: unit.subjectId, teacherId: unit.teacherId, day, period, week })
+        lessons.push({ classId: unit.classId, subjectId: unit.subjectId, teacherId: unit.teacherId, day, period, week, isPartial })
         return { day, period }
       }
     }
@@ -153,25 +161,22 @@ function generateLessons(): { lessons: Lesson[]; unplaced: number } {
     const entries = db.workload.filter((w) => w.classId === cls.id)
     classOccupied.set(cls.id, new Set())
 
-    for (const entry of entries) {
-      const [numerator, denominator] = twoWeekCounts(entry.lessonsPerWeek)
-      const isWhole = Number.isInteger(entry.lessonsPerWeek)
-      const perWeek = Math.max(numerator, denominator)
-
-      for (let i = 0; i < perWeek; i++) {
-        // Whole-number workloads pin the same slot in both weeks (identical timetable
-        // every week); fractional ones place each week independently, so the shorter
-        // week simply has fewer lessons and the slot shows a rotation.
-        const slot = i < numerator ? place(entry, 0, classIndex, cls) : null
-        if (i < numerator && !slot) unplaced++
-
-        if (i < denominator) {
-          const preferred = isWhole && slot ? slot : undefined
-          if (!place(entry, 1, classIndex, cls, preferred)) unplaced++
-        }
+    entries.forEach((entry, entryIndex) => {
+      // Full lessons: identical slot in both weeks, never partial.
+      for (let i = 0; i < fullLessonsPerWeek(entry.lessonsPerWeek); i++) {
+        const slot = place(entry, 0, false, classIndex, cls)
+        if (!slot) unplaced++
+        if (!place(entry, 1, false, classIndex, cls, slot ?? undefined)) unplaced++
         lessonCounter++
       }
-    }
+      // A trailing ".5": one partial lesson living in a single week — the slot then shows
+      // a week I / week II rotation. Alternate which week carries it so both views fill out.
+      if (hasPartialLesson(entry.lessonsPerWeek)) {
+        const week = ((classIndex + entryIndex) % 2) as 0 | 1
+        if (!place(entry, week, true, classIndex, cls)) unplaced++
+        lessonCounter++
+      }
+    })
   })
 
   return { lessons, unplaced }
@@ -236,7 +241,7 @@ export function startGenerationJob(): Generation {
       }
       const school = currentSchool()
       const { lessons } = generateLessons()
-      const totalPossible = db.workload.reduce((sum, w) => sum + roundedLessonCount(w.lessonsPerWeek), 0)
+      const totalPossible = db.workload.reduce((sum, w) => sum + twoWeekTotal(w.lessonsPerWeek), 0)
       const score = totalPossible === 0 ? 100 : Math.round((lessons.length / totalPossible) * 1000) / 10
       job.status = 'Completed'
       job.score = score
@@ -268,10 +273,7 @@ export function startGenerationJob(): Generation {
 // Pre-seed a completed schedule so Dashboard/Timetable have data before the user runs Generate.
 {
   const { lessons } = generateLessons()
-  const totalPossible = db.workload.reduce((sum, w) => {
-    const [a, b] = twoWeekCounts(w.lessonsPerWeek)
-    return sum + a + b
-  }, 0)
+  const totalPossible = db.workload.reduce((sum, w) => sum + twoWeekTotal(w.lessonsPerWeek), 0)
   const score = totalPossible === 0 ? 100 : Math.round((lessons.length / totalPossible) * 1000) / 10
   db.schedules.unshift({
     id: 'schedule-seed-1',

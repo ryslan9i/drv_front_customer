@@ -18,7 +18,7 @@ interface ScheduleGridProps {
 export function ScheduleGrid({ lessons, workingDays, periodsPerDay, subjectsById, teachersById, classesById, mode }: ScheduleGridProps) {
   const days = Array.from({ length: workingDays }, (_, i) => i)
   const periods = Array.from({ length: periodsPerDay }, (_, i) => i)
-  const hasRotation = lessons.some((l) => l.week === 1)
+  const hasRotation = lessons.some((l) => l.isPartial)
 
   return (
     <div className="space-y-2">
@@ -105,14 +105,14 @@ function GridCell({
   const secondaryOf = (lesson: Lesson) =>
     mode === 'class' ? teacherName(teachersById.get(lesson.teacherId)) : classesById.get(lesson.classId)?.name
 
+  // A slot rotates only when it holds a partial lesson. A full lesson repeats every week,
+  // so its two records (week 0 + week 1) collapse to a single chip.
+  const isRotation = lessons.some((l) => l.isPartial)
   const week0 = lessons.find((l) => l.week === 0)
   const week1 = lessons.find((l) => l.week === 1)
-  const sameBothWeeks =
-    week0 && week1 && week0.subjectId === week1.subjectId && week0.teacherId === week1.teacherId && week0.classId === week1.classId
 
-  // Identical lesson every week — render as a single full-height chip.
-  if (sameBothWeeks) {
-    const lesson = week0!
+  if (!isRotation) {
+    const lesson = week0 ?? week1!
     return (
       <td className="h-16 min-w-[150px] border-b border-border p-1.5 align-top">
         <LessonChip
@@ -237,8 +237,14 @@ function LessonChip({
           {DAY_LABELS[lesson.day]} · Урок {lesson.period + 1}
         </p>
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <WeekBadge week={lesson.week} />
-          {WEEK_LABELS[lesson.week]}
+          {lesson.isPartial ? (
+            <>
+              <WeekBadge week={lesson.week} />
+              {WEEK_LABELS[lesson.week]} — лише цей тиждень
+            </>
+          ) : (
+            'Щотижня'
+          )}
         </p>
       </PopoverContent>
     </Popover>

@@ -44,8 +44,16 @@ export function WholeSchoolGrid({ day, week, periodsPerDay, classes, lessons, su
                   <td key={cls.id} className="border-b border-border p-1">
                     <Popover>
                       <PopoverTrigger asChild>
-                        <button className="w-full truncate rounded-md bg-primary/10 px-1.5 py-1 text-center text-[11px] font-medium text-primary hover:bg-primary/20">
-                          {subject?.name}
+                        <button
+                          className={
+                            'flex w-full items-center justify-center gap-1 truncate rounded-md px-1.5 py-1 text-center text-[11px] font-medium hover:bg-primary/20 ' +
+                            (lesson.isPartial
+                              ? 'border border-dashed border-amber-500/50 bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                              : 'bg-primary/10 text-primary')
+                          }
+                        >
+                          {lesson.isPartial && <span className="font-bold">½</span>}
+                          <span className="truncate">{subject?.name}</span>
                         </button>
                       </PopoverTrigger>
                       <PopoverContent className="w-56 space-y-1">
@@ -53,6 +61,7 @@ export function WholeSchoolGrid({ day, week, periodsPerDay, classes, lessons, su
                         <p className="text-xs text-muted-foreground">
                           {cls.name} · {teacher ? `${teacher.firstName} ${teacher.lastName}` : ''}
                         </p>
+                        {lesson.isPartial && <p className="text-xs text-amber-600 dark:text-amber-400">Урок лише в цьому тижні ротації</p>}
                       </PopoverContent>
                     </Popover>
                   </td>
