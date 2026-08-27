@@ -97,7 +97,9 @@ function subjectTeacherPool(subjectIndex: number): number[] {
   return pool
 }
 
-const NORMAL_PATTERN = [5, 5, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3] // сума 45 = periodsPerDay(9) * workingDays(5)
+// Кілька дробових значень (1.5, 0.5) навмисно — щоб розклад демонстрував двотижневу
+// ротацію: такі предмети потрапляють лише в один тиждень або чергуються між тижнями.
+const NORMAL_PATTERN = [5, 5, 4, 4, 3, 3, 2, 2, 1.5, 1.5, 1, 0.5, 0.5] // середнє за 2 тижні, сума 35 < 45
 
 export const workload: WorkloadEntry[] = []
 

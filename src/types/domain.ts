@@ -142,6 +142,13 @@ export interface Lesson {
   teacherId: string
   day: number
   period: number
+  /**
+   * Which half of the two-week rotation this lesson belongs to.
+   * 0 = numerator week ("чисельник"), 1 = denominator week ("знаменник").
+   * A whole-number lessonsPerWeek produces an identical lesson in both weeks;
+   * a fractional one (e.g. 0.5) can produce a lesson in only one of the two weeks.
+   */
+  week: 0 | 1
 }
 
 export interface ScheduleSummary {

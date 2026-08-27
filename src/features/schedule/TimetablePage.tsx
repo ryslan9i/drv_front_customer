@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useSchool } from '@/lib/useSchool'
 
 const DAY_LABELS: Record<number, string> = { 0: 'Понеділок', 1: 'Вівторок', 2: 'Середа', 3: 'Четвер', 4: "П'ятниця", 5: 'Субота', 6: 'Неділя' }
+const WEEK_LABELS: Record<number, string> = { 0: 'Чисельник (1-й тиждень)', 1: 'Знаменник (2-й тиждень)' }
 
 export default function TimetablePage() {
   const { school, isLoading: schoolLoading } = useSchool()
@@ -41,6 +42,7 @@ export default function TimetablePage() {
   const [selectedClassId, setSelectedClassId] = useState<string>()
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>()
   const [selectedDay, setSelectedDay] = useState<number>(0)
+  const [selectedWeek, setSelectedWeek] = useState<0 | 1>(0)
 
   const activeClassId = selectedClassId ?? classes[0]?.id
   const activeTeacherId = selectedTeacherId ?? teachers[0]?.id
@@ -104,17 +106,27 @@ export default function TimetablePage() {
         </TabsContent>
 
         <TabsContent value="school" className="space-y-4">
-          <Select value={String(selectedDay)} onValueChange={(v) => setSelectedDay(Number(v))}>
-            <SelectTrigger className="w-56"><SelectValue placeholder="Оберіть день" /></SelectTrigger>
-            <SelectContent>
-              {Array.from({ length: school?.workingDays ?? 0 }, (_, d) => d).map((d) => (
-                <SelectItem key={d} value={String(d)}>{DAY_LABELS[d] ?? d + 1}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap gap-3">
+            <Select value={String(selectedDay)} onValueChange={(v) => setSelectedDay(Number(v))}>
+              <SelectTrigger className="w-56"><SelectValue placeholder="Оберіть день" /></SelectTrigger>
+              <SelectContent>
+                {Array.from({ length: school?.workingDays ?? 0 }, (_, d) => d).map((d) => (
+                  <SelectItem key={d} value={String(d)}>{DAY_LABELS[d] ?? d + 1}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={String(selectedWeek)} onValueChange={(v) => setSelectedWeek(Number(v) as 0 | 1)}>
+              <SelectTrigger className="w-56"><SelectValue placeholder="Оберіть тиждень" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0">{WEEK_LABELS[0]}</SelectItem>
+                <SelectItem value="1">{WEEK_LABELS[1]}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           {school && (
             <WholeSchoolGrid
               day={selectedDay}
+              week={selectedWeek}
               periodsPerDay={school.periodsPerDay}
               classes={classes}
               lessons={version.lessons}

@@ -3,6 +3,7 @@ import type { Lesson, SchoolClass, Subject, Teacher } from '@/types/domain'
 
 interface WholeSchoolGridProps {
   day: number
+  week: 0 | 1
   periodsPerDay: number
   classes: SchoolClass[]
   lessons: Lesson[]
@@ -10,8 +11,8 @@ interface WholeSchoolGridProps {
   teachersById: Map<string, Teacher>
 }
 
-export function WholeSchoolGrid({ day, periodsPerDay, classes, lessons, subjectsById, teachersById }: WholeSchoolGridProps) {
-  const dayLessons = lessons.filter((l) => l.day === day)
+export function WholeSchoolGrid({ day, week, periodsPerDay, classes, lessons, subjectsById, teachersById }: WholeSchoolGridProps) {
+  const dayLessons = lessons.filter((l) => l.day === day && l.week === week)
 
   return (
     <div className="overflow-x-auto rounded-lg border border-border">

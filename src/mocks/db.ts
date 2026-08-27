@@ -78,59 +78,99 @@ export function computeConflicts(): GenerationConflict[] {
   return conflicts
 }
 
+/**
+ * A schedule now runs a two-week rotation. `lessonsPerWeek` is the true average across the
+ * two-week cycle, so a workload contributes `round(lessonsPerWeek * 2)` lessons total, split
+ * as evenly as possible between week 0 (numerator) and week 1 (denominator). A whole number
+ * lands identically in both weeks; a fractional one (0.5, 1.5, …) is uneven by one lesson.
+ */
+function twoWeekCounts(lessonsPerWeek: number): [number, number] {
+  const total = Math.round(lessonsPerWeek * 2)
+  const numerator = Math.ceil(total / 2)
+  return [numerator, total - numerator]
+}
+
 function generateLessons(): { lessons: Lesson[]; unplaced: number } {
   const school = currentSchool()
   const lessons: Lesson[] = []
   const capacity = school.periodsPerDay * school.workingDays
+  // Occupancy is tracked per rotation week — the same day/period can hold a different
+  // lesson in week 0 and week 1.
   const classOccupied = new Map<string, Set<string>>()
   const teacherOccupied = new Map<string, Set<string>>()
-  const teacherDailyCount = new Map<string, Map<number, number>>()
+  const teacherDailyCount = new Map<string, Map<string, number>>()
   let unplaced = 0
   let lessonCounter = 0
 
   const teacherById = new Map(db.teachers.map((t) => [t.id, t]))
 
+  // Places one lesson for the given week, trying `preferred` slot first (used to pin a
+  // whole-number workload to the same slot in both weeks). Returns the slot used, or null.
+  const place = (
+    unit: WorkloadEntry,
+    week: 0 | 1,
+    classIndex: number,
+    cls: SchoolClass,
+    preferred?: { day: number; period: number },
+  ): { day: number; period: number } | null => {
+    const classSet = classOccupied.get(cls.id)!
+    if (classSet.size >= capacity * 2) return null
+    const teacher = teacherById.get(unit.teacherId)
+    teacherOccupied.set(unit.teacherId, teacherOccupied.get(unit.teacherId) ?? new Set())
+    teacherDailyCount.set(unit.teacherId, teacherDailyCount.get(unit.teacherId) ?? new Map())
+    const classAvail = db.classAvailability.get(cls.id)
+    const teacherAvail = db.teacherAvailability.get(unit.teacherId)
+
+    const offset = (classIndex * 7 + lessonCounter * 3) % capacity
+    const order = preferred ? [preferred.day * school.periodsPerDay + preferred.period] : []
+    for (let step = 0; step < capacity; step++) order.push((offset + step) % capacity)
+
+    for (const slotIndex of order) {
+      const day = Math.floor(slotIndex / school.periodsPerDay)
+      const period = slotIndex % school.periodsPerDay
+      const key = `${week}-${day}-${period}`
+      const dayKey = `${week}-${day}`
+      const dailyCount = teacherDailyCount.get(unit.teacherId)!.get(dayKey) ?? 0
+
+      if (
+        !classSet.has(key) &&
+        !teacherOccupied.get(unit.teacherId)!.has(key) &&
+        isSlotAvailable(classAvail, day, period) &&
+        isSlotAvailable(teacherAvail, day, period) &&
+        dailyCount < (teacher?.maxLessonsPerDay ?? 6)
+      ) {
+        classSet.add(key)
+        teacherOccupied.get(unit.teacherId)!.add(key)
+        teacherDailyCount.get(unit.teacherId)!.set(dayKey, dailyCount + 1)
+        lessons.push({ classId: unit.classId, subjectId: unit.subjectId, teacherId: unit.teacherId, day, period, week })
+        return { day, period }
+      }
+    }
+    return null
+  }
+
   db.classes.forEach((cls, classIndex) => {
     const entries = db.workload.filter((w) => w.classId === cls.id)
-    const units = entries.flatMap((e) => Array.from({ length: roundedLessonCount(e.lessonsPerWeek) }, () => e))
     classOccupied.set(cls.id, new Set())
 
-    for (const unit of units) {
-      if (classOccupied.get(cls.id)!.size >= capacity) {
-        unplaced++
-        continue
-      }
-      const teacher = teacherById.get(unit.teacherId)
-      teacherOccupied.set(unit.teacherId, teacherOccupied.get(unit.teacherId) ?? new Set())
-      teacherDailyCount.set(unit.teacherId, teacherDailyCount.get(unit.teacherId) ?? new Map())
-      const classAvail = db.classAvailability.get(cls.id)
-      const teacherAvail = db.teacherAvailability.get(unit.teacherId)
+    for (const entry of entries) {
+      const [numerator, denominator] = twoWeekCounts(entry.lessonsPerWeek)
+      const isWhole = Number.isInteger(entry.lessonsPerWeek)
+      const perWeek = Math.max(numerator, denominator)
 
-      let placed = false
-      const offset = (classIndex * 7 + lessonCounter * 3) % capacity
-      for (let step = 0; step < capacity && !placed; step++) {
-        const slotIndex = (offset + step) % capacity
-        const day = Math.floor(slotIndex / school.periodsPerDay)
-        const period = slotIndex % school.periodsPerDay
-        const key = `${day}-${period}`
-        const dailyCount = teacherDailyCount.get(unit.teacherId)!.get(day) ?? 0
+      for (let i = 0; i < perWeek; i++) {
+        // Whole-number workloads pin the same slot in both weeks (identical timetable
+        // every week); fractional ones place each week independently, so the shorter
+        // week simply has fewer lessons and the slot shows a rotation.
+        const slot = i < numerator ? place(entry, 0, classIndex, cls) : null
+        if (i < numerator && !slot) unplaced++
 
-        if (
-          !classOccupied.get(cls.id)!.has(key) &&
-          !teacherOccupied.get(unit.teacherId)!.has(key) &&
-          isSlotAvailable(classAvail, day, period) &&
-          isSlotAvailable(teacherAvail, day, period) &&
-          dailyCount < (teacher?.maxLessonsPerDay ?? 6)
-        ) {
-          classOccupied.get(cls.id)!.add(key)
-          teacherOccupied.get(unit.teacherId)!.add(key)
-          teacherDailyCount.get(unit.teacherId)!.set(day, dailyCount + 1)
-          lessons.push({ classId: unit.classId, subjectId: unit.subjectId, teacherId: unit.teacherId, day, period })
-          placed = true
+        if (i < denominator) {
+          const preferred = isWhole && slot ? slot : undefined
+          if (!place(entry, 1, classIndex, cls, preferred)) unplaced++
         }
+        lessonCounter++
       }
-      if (!placed) unplaced++
-      lessonCounter++
     }
   })
 
@@ -143,8 +183,10 @@ function computeGaps(lessons: Lesson[], key: 'classId' | 'teacherId', school: Sc
     const id = lesson[key]
     if (!byEntity.has(id)) byEntity.set(id, new Map())
     const byDay = byEntity.get(id)!
-    if (!byDay.has(lesson.day)) byDay.set(lesson.day, [])
-    byDay.get(lesson.day)!.push(lesson.period)
+    // Gaps are per rotation week — a week-0 and a week-1 lesson never sit in the same day.
+    const dayKey = lesson.week * 100 + lesson.day
+    if (!byDay.has(dayKey)) byDay.set(dayKey, [])
+    byDay.get(dayKey)!.push(lesson.period)
   }
   let gaps = 0
   for (const byDay of byEntity.values()) {
@@ -226,7 +268,10 @@ export function startGenerationJob(): Generation {
 // Pre-seed a completed schedule so Dashboard/Timetable have data before the user runs Generate.
 {
   const { lessons } = generateLessons()
-  const totalPossible = db.workload.reduce((sum, w) => sum + roundedLessonCount(w.lessonsPerWeek), 0)
+  const totalPossible = db.workload.reduce((sum, w) => {
+    const [a, b] = twoWeekCounts(w.lessonsPerWeek)
+    return sum + a + b
+  }, 0)
   const score = totalPossible === 0 ? 100 : Math.round((lessons.length / totalPossible) * 1000) / 10
   db.schedules.unshift({
     id: 'schedule-seed-1',
