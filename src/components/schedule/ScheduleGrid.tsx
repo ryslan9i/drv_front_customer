@@ -108,11 +108,11 @@ function GridCell({
   // A slot rotates only when it holds a partial lesson. A full lesson repeats every week,
   // so its two records (week 0 + week 1) collapse to a single chip.
   const isRotation = lessons.some((l) => l.isPartial)
-  const week0 = lessons.find((l) => l.week === 0)
   const week1 = lessons.find((l) => l.week === 1)
+  const week0 = lessons.find((l) => l.week !== 1)
 
   if (!isRotation) {
-    const lesson = week0 ?? week1!
+    const lesson = week0 ?? week1 ?? lessons[0]
     return (
       <td className="h-16 min-w-[150px] border-b border-border p-1.5 align-top">
         <LessonChip
